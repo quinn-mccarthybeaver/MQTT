@@ -5,7 +5,9 @@ try:
     PORT = int(sys.argv[2])
 except:
     print("improper arguments.")
-    print("First arg must be a valid IPv4 address, second arg must be a valid and available port number.")
+    print(
+        "First arg must be a valid IPv4 address, second arg must be a valid and available port number."
+    )
     sys.exit(0)
 
 listenSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -14,8 +16,7 @@ listenSocket.bind((HOST, PORT))
 
 # this queue is how we send messages to the subscription handler thread
 q = queue.SimpleQueue()
-threading.Thread(target=subhandler.spinup, args=(q,)).start()
-
+threading.Thread(target=subhandler.spinup, args=(q, )).start()
 
 while True:
     listenSocket.listen()
@@ -33,7 +34,4 @@ while True:
 
     q.put((subqueue, pubqueue, sendqueue))
     threading.Thread(target=sessionhandler.SessionHandler,
-                     args=(connsocket,
-                           subqueue,
-                           pubqueue,
-                           sendqueue)).start()
+                     args=(connsocket, subqueue, pubqueue, sendqueue)).start()

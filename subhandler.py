@@ -1,5 +1,6 @@
 import queue, selectors, packets
 
+
 def spinup(q):
     handler = Handler()
 
@@ -8,16 +9,17 @@ def spinup(q):
             # sends new queues out to clients, put them in mailboxes
             # (subbox, pubbox, outbox)
             handler.mailboxes.append(q.get())
-        for sub, pub, out in handler.mailboxes: # if there's mail, update state
-            if not sub.empty(): # someone has a subscription
+        for sub, pub, out in handler.mailboxes:  # if there's mail, update state
+            if not sub.empty():  # someone has a subscription
                 subing, subscription = sub.get()
                 if subing:
                     handler.subscribe(subscription, out)
                 else:
                     handler.unsubscribe(subscription, out)
-            if not pub.empty(): # someone has a publish
+            if not pub.empty():  # someone has a publish
                 topic, message, retain = pub.get()
                 handler.publish(topic, message, retain)
+
 
 class Handler:
     def __init__(self):
@@ -36,17 +38,16 @@ class Handler:
     def subscribe(self, subscription, outbox):
         topic, qos = subscription
         self.subscribers.addsub(topic, outbox, qos)
-        
+
     def unsubscribe(self, subscription, outbox):
         topic, _ = subscription
         self.subscribers.unsub(topic, outbox)
 
-class SubTree:
 
+class SubTree:
     def __init__(self):
         # SubTrees: {topicLevel:SubTree}, [Subscribers]
-        
-        #[SubNodes]
+
         self.subtrees = {}
         self.subs = []
 
@@ -55,9 +56,10 @@ class SubTree:
         self.retained = {}
 
     # updated
-    # still needs retention update
+    # still needs retained messages update
     # walks down topic hierarchy, adding subtrees as needed. the top
     # level subtree will always be empty
+    # Maybe some kind of topic verifying?
     def addsub(self, topic, outbox, qos):
         topicLevels = topic.split("/")
         target = self
@@ -70,57 +72,50 @@ class SubTree:
                 target = toadd
 
         target.subs.append((outbox, qos))
-        
+
+    # first walks down the tree until the right topic level is found
+    # next searches the subscribers array for the outbox of the
+    # subscriber in question and removes them
     def unsub(self, topic, outbox):
         topic = topic.split("/")
         target = self
         for lvl in topic:
-            if lvl == "+":
-                for subtree in target.subtrees:
-                    subtree.wildcardunsub(outbox)
-                return
-            elif lvl == "#":
-                target.wildcardunsub(outbox)
-                return
+            if lvl in target.subtree:
+                target = target.subtree[lvl]
             else:
-                if lvl in target.subtree:
-                    target = target.subtree[lvl]
-                else:
-                    return
+                # the topic isn't in the tree, so do nothing
+                return
 
+        # somehow clean up tree here?
+        # send kill msg to client handler when we remove?
         for outtarget, qostarget in target.subs:
             if outtarget == outbox:
                 target.subs.remove((outbox, qos))
+                return
 
-    def wildcardunsub(self, outbox):
-        for outtarget, qostarget in target.subs:
-            if outtarget == outbox:
-                target.subs.remove((outbox, qos))
-
-        for subtree in target.subtrees:
-            subtree.wildcardunsub(outbox)
-
+    # actually the only place that wildcards need to be handled. We
+    # can't publish to a wildcard, but when a wildcard is found while
+    # traversing the tree we need to treat that as a match (switched
+    # to a recursvie approach)
     def publish(self, topic, msg, retain):
         if retain:
             print("retained msg, not implemented yet")
         topic = topic.split("/")
-        target = self
-        for lvl in topic:
-            if lvl == "+":
-                for subtree in target.subtrees:
-                    subtree.wildcardpublish(msg, retain)
-                return
-            elif lvl == "#":
-                target.wildcardpublish(msg, retain)
-                return
-            else:
-                if lvl in target.subtree:
-                    target = target.subtree[lvl]
-                else:
-                    return
+        self.publishrec(topic, msg)
 
-        for out, qos in target.subs:
-            out.put((msg, qos))
+    def publishrec(self, topic, msg):
+        if topic == []:
+            for outbox, qos in self.subs:
+                outbox.put((msg, qos))
+        else:
+            currentlvl = topic[0]
+            topic = topic[1:]
+            if "+" in self.subtrees:
+                self.subtrees["+"].publishrec([], msg)
+            if "#" in self.subtrees:
+                self.subtrees["#"].publishrec([], msg)
+            if currentlvl in self.subtrees:
+                self.subtrees[currentlvl].publishrec(topic, msg)
 
     # save this, might be useful when reimplementing retain
     def oldpublish(self, topic, msg, retain):
@@ -153,58 +148,3 @@ class SubTree:
             else:
                 return False
         return True
-
-class SubNode:
-
-    def __init__(self, topic):
-        # [(outbox, qos)]
-        self.subscribers = []
-
-        # [SubNode]
-        self.subtopics = []
-
-        # String
-        self.topic = topic
-
-    def unsub(self, topic, outbox):
-        if topic == []:
-            for sub in self.subscribers:
-                if sub[0] == outbox:
-                    self.subscribers.remove((outbox, sub[1]))
-        elif topic[0] == "#":
-            for sub in self.subscribers:
-                if sub[0] == outbox:
-                    self.subscribers.remove((outbox, sub[1]))
-            for node in self.subtopics:
-                node.unsub(topic, outbox)
-        else:
-            for node in self.subtopics:
-                if (node.topic == topic[0] or topic[0] == "+") and node.topic != "#":
-                    node.unsub(topic[1:], outbox)
-
-    def addsub(self, topic, outbox, qos):
-        if topic == []:
-            self.subscribers.append((outbox, qos))
-        else:
-            if self.subtopics == []:
-                self.subtopics.append(SubNode(topic[0]))
-            for node in self.subtopics:
-                if node.topic == topic[0]:
-                    node.addsub(topic[1:], outbox, qos)
-                    break
-            else:
-                toappend = SubNode(topic[0])
-                toappend.addsub(topic[1:], outbox, qos)
-                self.subtopics.append(toappend)
-        
-    def publish(self, topic, msg):
-        if topic == []:
-            for sub in self.subscribers:
-                outbox, qos = sub
-                outbox.put((msg, qos))
-        else:
-            for node in self.subtopics:
-                if topic[0] == node.topic or node.topic == "+":
-                    node.publish(topic[1:], msg)
-                elif node.topic == "#":
-                    node.publish([], msg)
