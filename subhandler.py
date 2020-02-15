@@ -53,7 +53,7 @@ class SubTree:
 
         # Topic:msg
         # with new structure this needs to change to be seperate
-        self.retained = {}
+        self.retained = None
 
     # updated
     # still needs retained messages update
@@ -72,6 +72,9 @@ class SubTree:
                 target = toadd
 
         target.subs.append((outbox, qos))
+
+        if target.retained != None:
+            outbox.put((target.retained, qos))
 
     # first walks down the tree until the right topic level is found
     # next searches the subscribers array for the outbox of the
@@ -98,53 +101,22 @@ class SubTree:
     # traversing the tree we need to treat that as a match (switched
     # to a recursvie approach)
     def publish(self, topic, msg, retain):
-        if retain:
-            print("retained msg, not implemented yet")
         topic = topic.split("/")
-        self.publishrec(topic, msg)
+        self.publishrec(topic, msg, retain)
 
-    def publishrec(self, topic, msg):
+    def publishrec(self, topic, msg, retain):
         if topic == []:
             for outbox, qos in self.subs:
                 outbox.put((msg, qos))
+            if retain:
+                self.retained = msg
+                print("retained")
         else:
             currentlvl = topic[0]
             topic = topic[1:]
             if "+" in self.subtrees:
-                self.subtrees["+"].publishrec([], msg)
+                self.subtrees["+"].publishrec([], msg, False)
             if "#" in self.subtrees:
-                self.subtrees["#"].publishrec([], msg)
+                self.subtrees["#"].publishrec([], msg, False)
             if currentlvl in self.subtrees:
-                self.subtrees[currentlvl].publishrec(topic, msg)
-
-    # save this, might be useful when reimplementing retain
-    def oldpublish(self, topic, msg, retain):
-        if retain:
-            self.retained[topic] = packets.makeretain(msg)
-        topic = topic.split("/")
-        for node in self.subnodes:
-            if node.topic == topic[0] or node.topic == "+":
-                node.publish(topic[1:], msg)
-            elif node.topic == "#":
-                node.publish([], msg)
-
-    def match(topic1, topic2):
-        if len(topic1) >= len(topic2):
-            topiclong = topic1.split("/")
-            topicshort = topic2.split("/")
-        else:
-            topiclong = topic2.split("/")
-            topicshort = topic1.split("/")
-        i = 0
-        for topic in topicshort:
-            if topic == "#" or topiclong[i] == "#":
-                return True
-            elif topic == "+" or topiclong[i] == "+":
-                i += 1
-                continue
-            elif topic == topiclong[i]:
-                i += 1
-                continue
-            else:
-                return False
-        return True
+                self.subtrees[currentlvl].publishrec(topic, msg, retain)
