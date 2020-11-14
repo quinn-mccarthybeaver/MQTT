@@ -1,4 +1,5 @@
-import threading, socket, sessionhandler, subhandler, queue, selectors, sys
+import threading, socket, sessionhandler, subhandler, queue, sys
+# selectors
 
 try:
     HOST = sys.argv[1]

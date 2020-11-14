@@ -1,6 +1,3 @@
-import queue, selectors, packets
-
-
 def spinup(q):
     handler = Handler()
 
@@ -83,8 +80,8 @@ class SubTree:
         topic = topic.split("/")
         target = self
         for lvl in topic:
-            if lvl in target.subtree:
-                target = target.subtree[lvl]
+            if lvl in target.subtrees:
+                target = target.subtrees[lvl]
             else:
                 # the topic isn't in the tree, so do nothing
                 return
@@ -93,8 +90,8 @@ class SubTree:
         # send kill msg to client handler when we remove?
         for outtarget, qostarget in target.subs:
             if outtarget == outbox:
-                target.subs.remove((outbox, qos))
-                return
+                target.subs.remove((outbox, qostarget))
+                break
 
     # actually the only place that wildcards need to be handled. We
     # can't publish to a wildcard, but when a wildcard is found while
@@ -110,7 +107,6 @@ class SubTree:
                 outbox.put((msg, qos))
             if retain:
                 self.retained = msg
-                print("retained")
         else:
             currentlvl = topic[0]
             topic = topic[1:]

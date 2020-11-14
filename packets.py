@@ -27,7 +27,7 @@ class DecodedPacket:
 
     def __init__(self, b):
         firstByte = b[0]
-        secondByte = b[1]
+        # secondByte = b[1]
 
         self.retain = firstByte & 1
         self.QoS = (firstByte >> 1) & 3
